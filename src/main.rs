@@ -3,7 +3,6 @@ use std::env;
 use colored::*;
 use git2::Error;
 use git2::Oid;
-use git2::Status;
 use git2::Repository;
 
 struct FileState {
@@ -162,23 +161,32 @@ fn get_file_state(repo: &Repository) -> Result<FileState, Error> {
     let mut index_add = 0;
     let mut index_edit = 0;
     let mut index_remove = 0;
-    for status in statuses.iter() {
-        match status.status() {
-            Status::WT_NEW => wt_add += 1,
-            Status::WT_MODIFIED => wt_edit += 1,
-            Status::WT_DELETED => wt_remove += 1,
-            Status::WT_RENAMED => {
-                wt_add += 1;
-                wt_remove += 1;
-            }
-            Status::INDEX_NEW => index_add += 1,
-            Status::INDEX_MODIFIED => index_edit += 1,
-            Status::INDEX_DELETED => index_remove += 1,
-            Status::INDEX_RENAMED => {
-                index_add += 1;
-                index_remove += 1;
-            }
-            _ => { }
+    for status in statuses.iter().map(|s| s.status()) {
+        if status.is_wt_new() {
+            wt_add += 1;
+        }
+        if status.is_wt_modified() {
+            wt_edit += 1;
+        }
+        if status.is_wt_deleted() {
+            wt_remove += 1;
+        }
+        if status.is_wt_renamed() {
+            wt_add += 1;
+            wt_remove += 1;
+        }
+        if status.is_index_new() {
+            index_add += 1;
+        }
+        if status.is_index_modified() {
+            index_edit += 1;
+        }
+        if status.is_index_deleted() {
+            index_remove += 1;
+        }
+        if status.is_index_renamed() {
+            index_add += 1;
+            index_remove += 1;
         }
     }
 
