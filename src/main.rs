@@ -66,7 +66,7 @@ impl BranchState {
 fn main() -> Result<(), Error> {
     let current_dir = match env::current_dir() {
         Ok(dir) => dir,
-        Err(error) => return Err(Error::from_str(&error.to_string()))
+        Err(error) => return add_context_to_error(Error::from_str(&error.to_string()), "Unable to get current dir")
     };
     match Repository::discover(current_dir) {
         Ok(repo) => {
@@ -107,7 +107,15 @@ fn get_repo_info(repo: &Repository) -> Result<(), Error> {
 
 fn get_branch_info(repo: &Repository) -> Result<BranchState, Error> {
 
-    let head = repo.head()?;
+    if repo.is_empty()? {
+        return get_empty_repo_branch_info(repo)
+    }
+
+    let head = match repo.head() {
+        Ok(name) => name,
+        Err(e) => return add_context_to_error(e, "Unable to get HEAD")
+    };
+
     let head_fullname = match head.name() {
         Some(name) => name,
         None => return Err(Error::from_str("Unable to get local branch full name"))
@@ -150,6 +158,37 @@ fn get_branch_info(repo: &Repository) -> Result<BranchState, Error> {
         behind: ahead_behind.1,
         is_detached: repo.head_detached()?,
         sha: head.peel_to_commit()?.id() })
+}
+
+fn get_empty_repo_branch_info(repo: &Repository) -> Result<BranchState, Error> {
+    let mut config = match repo.config() {
+        Ok(mut live_config) => match live_config.snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(e) => return add_context_to_error(e, "Unable to create config snapshot")
+        },
+        Err(e) => return add_context_to_error(e, "Unable to get repo config")
+    };
+    const DEFAULT_BRANCH_KEY: &str = "init.defaultBranch";
+    let branch_name = match config.get_str(DEFAULT_BRANCH_KEY) {
+        Ok(name) => name.to_string(),
+        Err(_) => {
+            let global = match config.open_global() {
+                Ok(g) => g,
+                Err(e) => return add_context_to_error(e, "Unable to get global config")
+            };
+            match global.get_str(DEFAULT_BRANCH_KEY) {
+                Ok(name) => name.to_string(),
+                Err(_) => "master".to_string()
+            }
+        }
+    };
+    return Ok(BranchState {
+        name: branch_name,
+        ahead: 0,
+        behind: 0,
+        is_detached: false,
+        sha: Oid::zero()
+    });
 }
 
 fn get_file_state(repo: &Repository) -> Result<FileState, Error> {
@@ -195,4 +234,8 @@ fn get_file_state(repo: &Repository) -> Result<FileState, Error> {
 
 fn print_bold_string(text: String, colour: Color) {
     print!("{}", text.color(colour).bold());
+}
+
+fn add_context_to_error<T>(e: Error, context: &str) -> Result<T, Error> {
+    Err(Error::from_str(format!("{}. Error: {}", context, e).as_str()))
 }
